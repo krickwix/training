@@ -3,6 +3,7 @@ FROM ${FROM_IMAGE_NAME}
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV RCLONE_VER=v1.67.0
+ENV PYTORCH_ROCM_ARCH=gfx942
 
 # apt dependencies
 RUN apt-get update && \
@@ -42,7 +43,7 @@ RUN pip uninstall xformers -y && \
     git clone https://github.com/ROCm/xformers.git && \
     cd xformers && \
     git submodule update --init --recursive && \
-    pip install -e . && \
+    PYTORCH_ROCM_ARCH=gfx942 HIP_ARCHITECTURES=gfx942 pip install . && \
     cd .. && \
     rm -rf xformers
 COPY . /diffusion/
