@@ -5,10 +5,30 @@ import os
 import sys
 import time
 import random
+import warnings
 
 import numpy as np
 import torch
 import torchvision
+
+# Handle HuggingFace offline mode
+if "HF_HUB_OFFLINE" in os.environ:
+    warnings.warn(
+        "HF_HUB_OFFLINE is set, which prevents downloading models. "
+        "If you need to download models, unset this variable with: "
+        "os.environ.pop('HF_HUB_OFFLINE', None)"
+    )
+    # Uncomment the following line if you want to force disable offline mode
+    os.environ.pop("HF_HUB_OFFLINE", None)
+    
+    # Log the paths where the model expects to find cached files
+    from huggingface_hub import constants
+    cache_dir = os.environ.get("HF_HOME", constants.DEFAULT_CACHE_DIR)
+    print(f"Using HuggingFace cache directory: {cache_dir}")
+    print("Make sure CLIP model files are available in this location")
+    
+    # Alternatively, you can specify a local path to the model files
+    os.environ["CLIP_MODEL_PATH"] = "/hf_home/open_clip_pytorch_model.bin"
 
 try:
     import lightning.pytorch as pl
@@ -184,15 +204,34 @@ def get_parser(**parser_kwargs):
 
     return parser
 
-# A function that returns the non-default arguments between two objects
+# Check PyTorch Lightning version and use the appropriate method to add arguments
+import pkg_resources
+import re
+
 def nondefault_trainer_args(opt):
-    # create an argument parsser
     parser = argparse.ArgumentParser()
-    # add pytorch lightning trainer default arguments
-    parser = Trainer.add_argparse_args(parser)
-    # parse the empty arguments to obtain the default values
+    
+    # Check if we're using lightning.pytorch or pytorch_lightning
+    try:
+        version = pkg_resources.get_distribution("lightning").version
+    except:
+        try:
+            version = pkg_resources.get_distribution("pytorch_lightning").version
+        except:
+            version = "0.0"
+    
+    # Version-specific handling for argparse
+    if int(version.split('.')[0]) >= 2:
+        # Lightning 2.0+ - use the CLI utilities
+        from lightning.pytorch.cli import LightningArgumentParser
+        parser = LightningArgumentParser()
+        parser.add_lightning_class_args(Trainer, None)
+    else:
+        # Older versions - use the traditional method
+        parser = Trainer.add_argparse_args(parser)
+    
+    # Parse empty args to get defaults
     args = parser.parse_args([])
-    # return all non-default arguments
     return sorted(k for k in vars(args) if getattr(opt, k) != getattr(args, k))
 
 class ListEarlyStopping(Callback):
@@ -374,10 +413,10 @@ if __name__ == "__main__":
     mlperf_logging_utils.submission_info(mllogger=mllogger,
                                          submission_benchmark=mllog_constants.STABLE_DIFFUSION,
                                          submission_division=mllog_constants.CLOSED,
-                                         submission_org="reference_implementation",
-                                         submission_platform="DGX-A100",
-                                         submission_poc_name="Ahmad Kiswani",
-                                         submission_poc_email="akiswani@nvidia.com",
+                                         submission_org="Cisco Systems / Advanced Micro Devices",
+                                         submission_platform="8 x AMD-MI300x",
+                                         submission_poc_name="Fabien Andrieux",
+                                         submission_poc_email="fandrieu@cisco.com",
                                          submission_status=mllog_constants.ONPREM)
 
     mllogger.start(key=mllog_constants.INIT_START)
@@ -393,7 +432,47 @@ if __name__ == "__main__":
     sys.path.append(os.getcwd())
 
     parser = get_parser()
-    parser = Trainer.add_argparse_args(parser)
+    
+    # Check PyTorch Lightning version and add args accordingly
+    try:
+        version = pkg_resources.get_distribution("lightning").version
+    except:
+        try:
+            version = pkg_resources.get_distribution("pytorch_lightning").version
+        except:
+            version = "0.0"
+    
+    # Version-specific handling for argparse
+    if int(version.split('.')[0]) >= 2:
+        # Lightning 2.0+ - use the CLI utilities
+        from lightning.pytorch.cli import LightningArgumentParser
+        trainer_parser = LightningArgumentParser()
+        trainer_parser.add_lightning_class_args(Trainer, None)
+        
+        # Get existing argument names to avoid conflicts
+        existing_arg_names = set()
+        for action in parser._actions:
+            if action.option_strings:
+                existing_arg_names.update(action.option_strings)
+        
+        # Add only non-conflicting actions
+        for action in trainer_parser._actions:
+            # Skip actions that would conflict with existing ones
+            if not any(opt in existing_arg_names for opt in action.option_strings):
+                parser._add_action(action)
+    else:
+        # Older versions - use the traditional method
+        # Create a new parser with conflict resolution
+        temp_parser = argparse.ArgumentParser(conflict_handler='resolve')
+        temp_parser = Trainer.add_argparse_args(temp_parser)
+        
+        # Transfer arguments from temp_parser to our main parser
+        for action in temp_parser._actions:
+            try:
+                parser._add_action(action)
+            except argparse.ArgumentError:
+                # Skip arguments that conflict
+                continue
 
     opt, unknown = parser.parse_known_args()
     # Veirfy the arguments are both specified
@@ -604,7 +683,26 @@ if __name__ == "__main__":
         trainer_kwargs["callbacks"].append(instantiate_from_config(modelckpt_cfg))
 
         # Create a Trainer object with the specified command-line arguments and keyword arguments, and set the log directory
-        trainer = Trainer.from_argparse_args(trainer_opt, **trainer_kwargs)
+        try:
+            version = pkg_resources.get_distribution("lightning").version
+        except:
+            try:
+                version = pkg_resources.get_distribution("pytorch_lightning").version
+            except:
+                version = "0.0"
+
+        if int(version.split('.')[0]) >= 2:
+            # Lightning 2.0+ - manually create the trainer with all arguments
+            trainer_args = vars(trainer_opt)
+            # Remove keys that are also in trainer_kwargs to avoid conflicts
+            for key in trainer_kwargs:
+                if key in trainer_args:
+                    del trainer_args[key]
+            trainer = Trainer(**trainer_args, **trainer_kwargs)
+        else:
+            # Older versions - use the traditional method
+            trainer = Trainer.from_argparse_args(trainer_opt, **trainer_kwargs)
+
         trainer.logdir = logdir
 
         # Create a data module based on the configuration file
