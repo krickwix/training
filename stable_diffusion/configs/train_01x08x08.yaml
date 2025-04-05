@@ -33,16 +33,16 @@ model:
 
       save_images:
         enabled: False
-        base_output_dir: "/results/inference"
+        base_output_dir: "/data/mlcommons/results/inference"
       fid:
         enabled: True
         inception_weights_url: https://github.com/mseitzer/pytorch-fid/releases/download/fid_weights/pt_inception-2015-12-05-6726825d.pth
-        cache_dir: /checkpoints/inception
-        gt_path: /datasets/coco2014/val2014_30k_stats.npz
+        cache_dir: /data/mlcommons/checkpoints/inception
+        gt_path: /data/mlcommons/datasets/coco2014/val2014_30k_stats.npz
       clip:
         enabled: True
         clip_version: "ViT-H-14"
-        cache_dir: /checkpoints/clip
+        cache_dir: /data/mlcommons/checkpoints/clip
 
     scheduler_config:
       target: ldm.lr_scheduler.LambdaLinearScheduler
@@ -102,7 +102,7 @@ model:
         version: "laion2b_s32b_b79k"
         freeze: True
         layer: "penultimate"
-        cache_dir: /checkpoints/clip
+        cache_dir: /data/mlcommons/checkpoints/clip
 
 data:
     target: ldm.data.composable_data_module.ComposableDataModule
@@ -110,7 +110,7 @@ data:
       train:
         target: ldm.data.webdatasets.build_dataloader
         params:
-          urls: /datasets/laion-400m/webdataset-moments-filtered/{00000..00831}.tar
+          urls: /data/mlcommons/datasets/laion-400m/webdataset-moments-filtered/{00000..00831}.tar
           batch_size: 8
           shuffle: 1000
           partial: False
@@ -121,7 +121,7 @@ data:
       validation:
         target: ldm.data.tsv.build_dataloader
         params:
-          annotations_file: "/datasets/coco2014/val2014_30k.tsv"
+          annotations_file: "/data/mlcommons/datasets/coco2014/val2014_30k.tsv"
           keys: ["image_id", "id", "caption"]
           batch_size: 8
           shuffle: False
