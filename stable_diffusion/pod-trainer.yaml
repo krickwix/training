@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sd-trainer-gpu
+  labels:
+    app: sd-trainer-gpu
+spec:
+  hostIPC: true
+  imagePullSecrets:
+    - name: cantor-registry-secret  # Replace with your secret name
+  containers:
+  - name: sd-trainer-gpu
+    image: jcr.aac-cantor.com/docker-local/mlperf-sd:rocm-latest
+    imagePullPolicy: Always
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
+    securityContext:
+      seccompProfile:
+        type: Unconfined
+      capabilities:
+        add:
+          - SYS_PTRACE
+      privileged: true
+    volumeMounts:
+    - name: sd-trainer-volume
+      mountPath: /data
+    - name: shm
+      mountPath: /dev/shm
+    resources:
+      requests:
+        amd.com/gpu: 8
+      limits:
+        amd.com/gpu: 8
+    env:
+    - name: HIP_FORCE_DEV_KERNARG
+      value: "1"
+    - name: NCCL_MIN_NCHANNELS
+      value: "112"
+  volumes:
+  - name: sd-trainer-volume
+    persistentVolumeClaim:
+      claimName: efs-pvc
+  - name: shm
+    emptyDir:
+      medium: Memory
