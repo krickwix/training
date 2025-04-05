@@ -5,8 +5,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV RCLONE_VER=v1.67.0
 
 # apt dependencies
-RUN apt-get update
-RUN apt-get install -y ffmpeg libsm6 libxext6 wget unzip
+RUN apt-get update && \
+    apt-get install -y ffmpeg libsm6 libxext6 wget unzip git python-is-python3
 
 # Install rclone from upstream, see https://github.com/mlcommons/training/issues/751
 RUN wget https://github.com/rclone/rclone/releases/download/${RCLONE_VER}/rclone-${RCLONE_VER}-linux-amd64.zip \
@@ -19,13 +19,31 @@ RUN wget https://github.com/rclone/rclone/releases/download/${RCLONE_VER}/rclone
 
 # Remove the opencv version shipped with the base image
 # https://github.com/opencv/opencv-python/issues/884
-RUN pip uninstall -y opencv
-RUN rm -rf /usr/local/lib/python3.10/dist-packages/cv2/
+RUN pip uninstall -y opencv && \
+    rm -rf /usr/local/lib/python3.10/dist-packages/cv2/
 
 RUN pip install --upgrade pip
-RUN pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/rocm6.3
-RUN apt-get install -y git
 # install LDM
-COPY . /diffusion
+COPY requirements.txt /diffusion/
 RUN cd /diffusion && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install -r requirements.txt 
+RUN pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/rocm6.3 -U && \
+    pip install https://github.com/Lightning-AI/lightning/archive/refs/heads/master.zip -U && \
+    pip install -U 'jsonargparse[signatures]>=4.27.7' && \
+    pip uninstall triton -y && \
+    pip install -U pytorch-triton-rocm triton-rocm pybind11
+RUN pip install -U packaging cmake ninja wheel setuptools pybind11 Cython &&\
+    git clone https://github.com/triton-lang/triton.git && \
+    cd triton && \
+    pip install -e python && \
+    cd .. && \
+    rm -rf triton
+RUN pip uninstall xformers -y && \
+    git clone https://github.com/ROCm/xformers.git && \
+    cd xformers && \
+    git submodule update --init --recursive && \
+    pip install -e . && \
+    cd .. && \
+    rm -rf xformers
+COPY . /diffusion/
+WORKDIR /diffusion
